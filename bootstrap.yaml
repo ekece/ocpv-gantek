@@ -1,0 +1,157 @@
+# 1. NAMESPACE TANIMI
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gantek-demo
+  labels:
+    kubernetes.io/metadata.name: gantek-demo
+---
+# 2. CLUSTER USER DEFINED NETWORK (L2 & PERSISTENT IPAM)
+apiVersion: k8s.ovn.org/v1
+kind: ClusterUserDefinedNetwork
+metadata:
+  name: flat-network-demo
+spec:
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: gantek-demo
+  network:
+    topology: Layer2
+    layer2:
+      role: Secondary
+      subnets:
+        - 10.50.0.0/24
+      ipam:
+        lifecycle: Persistent
+---
+# 3. RHEL9 VM (apricot-bonobo)
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: rhel9-vm-1
+  namespace: gantek-demo
+  labels:
+    app: rhel9-vm-1
+spec:
+  dataVolumeTemplates:
+    - apiVersion: cdi.kubevirt.io/v1beta1
+      kind: DataVolume
+      metadata:
+        name: rhel9-disk-1
+      spec:
+        sourceRef:
+          kind: DataSource
+          name: rhel9
+          namespace: openshift-virtualization-os-images
+        storage:
+          resources:
+            requests:
+              storage: 30Gi
+  runStrategy: RerunOnFailure
+  template:
+    metadata:
+      labels:
+        kubevirt.io/domain: rhel9-vm-1
+    spec:
+      domain:
+        cpu:
+          cores: 1
+          sockets: 1
+          threads: 1
+        devices:
+          disks:
+            - disk:
+                bus: virtio
+              name: rootdisk
+            - disk:
+                bus: virtio
+              name: cloudinitdisk
+          interfaces:
+            - bridge: {}
+              model: virtio
+              name: secondary-nic
+          rng: {}
+        resources:
+          requests:
+            memory: 2Gi
+      networks:
+        - multus:
+            networkName: flat-network-demo
+          name: secondary-nic
+      volumes:
+        - dataVolume:
+            name: rhel9-disk-1
+          name: rootdisk
+        - cloudInitNoCloud:
+            userData: |-
+              #cloud-config
+              user: cloud-user
+              password: password123
+              chpasswd: { expire: False }
+          name: cloudinitdisk
+---
+# 4. WORKSTATION VM
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: workstation
+  namespace: gantek-demo
+  labels:
+    app: workstation
+spec:
+  dataVolumeTemplates:
+    - apiVersion: cdi.kubevirt.io/v1beta1
+      kind: DataVolume
+      metadata:
+        name: workstation-disk
+      spec:
+        sourceRef:
+          kind: DataSource
+          name: rhel9
+          namespace: openshift-virtualization-os-images
+        storage:
+          resources:
+            requests:
+              storage: 30Gi
+  runStrategy: RerunOnFailure
+  template:
+    metadata:
+      labels:
+        kubevirt.io/domain: workstation
+    spec:
+      domain:
+        cpu:
+          cores: 1
+          sockets: 1
+          threads: 1
+        devices:
+          disks:
+            - disk:
+                bus: virtio
+              name: rootdisk
+            - disk:
+                bus: virtio
+              name: cloudinitdisk
+          interfaces:
+            - bridge: {}
+              model: virtio
+              name: secondary-nic
+          rng: {}
+        resources:
+          requests:
+            memory: 2Gi
+      networks:
+        - multus:
+            networkName: flat-network-demo
+          name: secondary-nic
+      volumes:
+        - dataVolume:
+            name: workstation-disk
+          name: rootdisk
+        - cloudInitNoCloud:
+            userData: |-
+              #cloud-config
+              user: cloud-user
+              password: password123
+              chpasswd: { expire: False }
+          name: cloudinitdisk
